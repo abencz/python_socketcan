@@ -28,8 +28,8 @@ import errno
 
 class CANSocket(object):
   FORMAT = "<IB3x8s"
-  ID_MASK = 0x1fffffff
-  IDENTIFIER_EXTENSION = 0x80000000
+  FD_FORMAT = "<IB3x64s"
+  CAN_RAW_FD_FRAMES = 5
 
   def __init__(self, interface=None):
     self.sock = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
@@ -38,6 +38,7 @@ class CANSocket(object):
 
   def bind(self, interface):
     self.sock.bind((interface,))
+    self.sock.setsockopt(socket.SOL_CAN_RAW, self.CAN_RAW_FD_FRAMES, 1)
 
   def send(self, cob_id, data, flags=0):
     cob_id = cob_id | flags
@@ -45,9 +46,14 @@ class CANSocket(object):
     self.sock.send(can_pkt)
 
   def recv(self, flags=0):
-    can_pkt = self.sock.recv(16)
-    cob_id, length, data = struct.unpack(self.FORMAT, can_pkt)
-    cob_id &= self.ID_MASK
+    can_pkt = self.sock.recv(72)
+
+    if len(can_pkt) == 16:
+      cob_id, length, data = struct.unpack(self.FORMAT, can_pkt)
+    else:
+      cob_id, length, data = struct.unpack(self.FD_FORMAT, can_pkt)
+
+    cob_id &= socket.CAN_EFF_MASK
     return (cob_id, data[:length])
 
 
@@ -79,7 +85,7 @@ def send_cmd(args):
       sys.stderr.write('Invalid cob-id {0}\n'.format(args.cob_id))
       sys.exit(errno.EINVAL)
 
-    s.send(cob_id, generate_bytes(args.body), s.IDENTIFIER_EXTENSION if args.extended_id else 0)
+    s.send(cob_id, generate_bytes(args.body), socket.CAN_EFF_FLAG if args.extended_id else 0)
 
 
 def listen_cmd(args):
